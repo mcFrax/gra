@@ -13,12 +13,17 @@ const (
 	arrowDown
 	arrowLeft
 	arrowRigth
+	fireEvent
 	quitEvent
 )
 
 var (
 	arrowMapping = map[byte]event{65: arrowUp, 66: arrowDown, 67: arrowRigth, 68: arrowLeft}
 )
+
+type projectile struct {
+	x, y int
+}
 
 func main() {
 	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
@@ -32,10 +37,18 @@ func main() {
 		for {
 			_, err := os.Stdin.Read(b)
 			if err == nil {
-				if arrowState == 0 && b[0] == 27 {
-					arrowState = 1
-				} else if arrowState == 1 && b[0] == 91 {
-					arrowState = 2
+				if arrowState == 0 {
+					switch b[0] {
+						case 27: arrowState = 1
+						case 32: inputEvents <- fireEvent
+						case 4: inputEvents <- quitEvent
+					}
+				} else if arrowState == 1 {
+					switch b[0] {
+						case 91: arrowState = 2
+						case 27: inputEvents <- quitEvent  // second escape in a row
+						default: arrowState = 0
+					}
 				} else if arrowState == 2 {
 					event, matched := arrowMapping[b[0]]
 					if matched {
@@ -52,10 +65,13 @@ func main() {
 		}
 	}()
 
-	displayWidth, displayHeight := 60, 20
+	displayWidth, displayHeight := 60, 40
 	moveDirection := 1
-	xpos := 10
+	xpos, ypos := 10, displayHeight-1
 	minx, maxx := 3, displayWidth - 4
+	
+	projectiles := make([]projectile, 0)
+	
 	ticker := time.Tick(20 * time.Millisecond)
 	
 	// create display buffer
@@ -73,6 +89,8 @@ func main() {
 					moveDirection = -1
 				case arrowRigth:
 					moveDirection = 1
+				case fireEvent:
+					projectiles = append(projectiles, projectile{xpos, ypos-1})
 				case quitEvent:
 					fmt.Println("\x1b[1;45m                                                                    \x1b[0m")
 					fmt.Println("\x1b[1;43m                                                                    \x1b[0m")
@@ -90,6 +108,15 @@ func main() {
 			case xpos > maxx: xpos = maxx
 		}
 		
+		leftProjectiles := make([]projectile, 0, len(projectiles)+5)
+		for _, projectile := range projectiles {
+			projectile.y -= 1
+			if projectile.y >= 0 {
+				leftProjectiles = append(leftProjectiles, projectile)
+			}
+		}
+		projectiles = leftProjectiles
+		
 		// clear display buffer (fill with spaces)
 		for iy := 0; iy < displayHeight; iy++ {
 			for ix := 0; ix < displayWidth; ix++ {
@@ -99,10 +126,17 @@ func main() {
 		
 		
 		// draw on the buffer
-		displayContent[displayHeight-2][xpos] = "\x1b[1;44m^\x1b[0m"
-		displayContent[displayHeight-1][xpos-1] = "\x1b[1;44m<"
-		displayContent[displayHeight-1][xpos] = "o"
-		displayContent[displayHeight-1][xpos+1] = ">\x1b[0m"
+		
+		// draw projectiles
+		for _, projectile := range projectiles {
+			displayContent[projectile.y][projectile.x] = "\x1b[1;35m|\x1b[0m"
+		}
+		
+		// draw ship
+		displayContent[ypos-1][xpos] = "\x1b[1;44m^\x1b[0m"
+		displayContent[ypos][xpos-1] = "\x1b[1;44m<"
+		displayContent[ypos][xpos] = "o"
+		displayContent[ypos][xpos+1] = ">\x1b[0m"
 		
 		
 		// print buffer to terminal
