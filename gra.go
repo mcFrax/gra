@@ -30,6 +30,11 @@ type bonus struct {
 	x, y int
 }
 
+type enemy struct {
+	x, y int
+	dead bool
+}
+
 func main() {
 	exec.Command("stty", "-F", "/dev/tty", "cbreak", "min", "1").Run()
 	exec.Command("stty", "-F", "/dev/tty", "-echo").Run()
@@ -78,6 +83,7 @@ func main() {
 	
 	projectiles := make([]projectile, 0)
 	bonuses := make([]bonus, 0)
+	enemies := make([]enemy, 0)
 	
 	ticker := time.Tick(20 * time.Millisecond)
 	
@@ -87,7 +93,7 @@ func main() {
 		displayContent[iy] = make([]string, displayWidth)
 	}
 
-	fmt.Println()
+	fmt.Println("\x1b[?12l")
 	fmt.Println("\x1b[45m                                                                    \x1b[0m")
 	fmt.Println("\x1b[45m  \x1b[0;1m                    Welcome here, brave pilot!                  \x1b[45m  \x1b[0m")
 	fmt.Println("\x1b[45m                                                                    \x1b[0m")
@@ -98,9 +104,17 @@ func main() {
 			case event := <-inputEvents:
 				switch event {
 				case arrowLeft:
-					moveDirection = -1
+					if moveDirection == -1{
+						moveDirection = 0
+					} else {
+						moveDirection = -1
+					}
 				case arrowRigth:
-					moveDirection = 1
+					if moveDirection == 1{
+						moveDirection = 0
+					} else {
+						moveDirection = 1
+					}
 				case fireEvent:
 					if hasDoubleGun {
 						projectiles = append(projectiles, projectile{xpos-1, ypos})
@@ -135,7 +149,7 @@ func main() {
 		projectiles = leftProjectiles
 		
 		if rand.Intn(100) == 0 {
-			bonuses = append(bonuses, bonus{rand.Intn(displayWidth), -1})
+			bonuses = append(bonuses, bonus{rand.Intn(displayWidth-4) + 2, -1})
 		}
 		leftBonuses := make([]bonus, 0, len(bonuses)+5)
 		for _, bonus := range bonuses {
@@ -149,6 +163,29 @@ func main() {
 			}
 		}
 		bonuses = leftBonuses
+		
+		if rand.Intn(40) == 0 {
+			enemies = append(enemies, enemy{x: rand.Intn(displayWidth-6) + 3, y: -2})
+		}
+		leftEnemies := make([]enemy, 0, len(enemies)+5)
+		for _, enemy := range enemies {
+			enemy.y += 1
+			if enemy.y < displayHeight {
+				for _, projectile := range projectiles {
+					if enemy.x - 1 < projectile.x && projectile.x <= enemy.x + 1 {
+						if enemy.y - 1 <= projectile.y && projectile.y <= enemy.y + 1 {
+							if projectile.y <= enemy.y || projectile.x == enemy.x {
+								enemy.dead = true
+							}
+						}
+					}
+				}
+				if !enemy.dead {
+					leftEnemies = append(leftEnemies, enemy)
+				}
+			}
+		}
+		enemies = leftEnemies
 		
 		// clear display buffer (fill with spaces)
 		for iy := 0; iy < displayHeight; iy++ {
@@ -164,6 +201,18 @@ func main() {
 			displayContent[bonus.y][bonus.x] = "\x1b[1;32m$\x1b[0m"
 		}
 		
+		// draw enemies
+		for _, enemy := range enemies {
+			if enemy.y >= 0 && enemy.y < displayHeight {
+				displayContent[enemy.y][enemy.x-1] = "\x1b[1;41;33m<\x1b[0m"
+				displayContent[enemy.y][enemy.x] = "\x1b[1;41;33mo\x1b[0m"
+				displayContent[enemy.y][enemy.x+1] = "\x1b[1;41;33m>\x1b[0m"
+			}
+			if enemy.y+1 >= 0 && enemy.y+1 < displayHeight {
+				displayContent[enemy.y+1][enemy.x] = "\x1b[1;41;33mv\x1b[0m"
+			}
+		}
+		
 		// draw projectiles
 		for _, projectile := range projectiles {
 			displayContent[projectile.y][projectile.x] = "\x1b[1;35m|\x1b[0m"
@@ -171,9 +220,9 @@ func main() {
 		
 		// draw ship
 		displayContent[ypos-1][xpos] = "\x1b[1;44m^\x1b[0m"
-		displayContent[ypos][xpos-1] = "\x1b[1;44m<"
-		displayContent[ypos][xpos] = "o"
-		displayContent[ypos][xpos+1] = ">\x1b[0m"
+		displayContent[ypos][xpos-1] = "\x1b[1;44m<\x1b[0m"
+		displayContent[ypos][xpos] = "\x1b[1;44mo\x1b[0m"
+		displayContent[ypos][xpos+1] = "\x1b[1;44m>\x1b[0m"
 		
 		
 		// print buffer to terminal
